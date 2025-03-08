@@ -9,16 +9,15 @@ pygame.init()
 # Set up the display
 WIDTH, HEIGHT = 800, 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Hollow Knight Clone | Arrow Keys: Move, Space: Jump, Z: Attack, Up+Z: Upward Slash")
+pygame.display.set_caption("Bad video game | Arrow Keys: Move, Space: Jump, Z: Attack, Up+Z: Upward Slash")
 
 # Colors
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 DARK_GRAY = (20, 20, 20)
 LIGHT_GRAY = (100, 100, 100)
-BLUE = (0, 0, 100)
 RED = (255, 0, 0)
-GREEN = (0, 255, 0)
+DARK_GREEN = (0, 100, 0)
 
 class Player(pygame.sprite.Sprite):
     def __init__(self):
@@ -41,6 +40,22 @@ class Player(pygame.sprite.Sprite):
         self.flicker = False
         self.blade_pos = 0
         self.slashing_upward = False
+        self.jetpack_active = False
+        self.fuel = 100
+        self.fuel_recharge_delay = 0
+        self.jetpack_animation = []
+        self.jetpack_frame = 0
+        self.create_jetpack_animation()
+        self.fuel_recharge_rate = 1
+        self.charge_time = 0
+        self.max_charge_time = 60  # 1 second to fully charge
+
+    def create_jetpack_animation(self):
+        for i in range(5):
+            flame = pygame.Surface((10, 20), pygame.SRCALPHA)
+            pygame.draw.polygon(flame, (255, 165, 0), [(5, 0), (0, 20), (10, 20)])
+            pygame.draw.polygon(flame, (255, 69, 0), [(5, 5), (2, 20), (8, 20)])
+            self.jetpack_animation.append(flame)
 
     def animate(self):
         self.image.fill((0, 0, 0, 0))
@@ -62,18 +77,21 @@ class Player(pygame.sprite.Sprite):
         blade_y = 30 + self.blade_pos
         pygame.draw.line(self.image, WHITE, (blade_x, blade_y), (blade_x, blade_y + 20), 2)
 
-    def create_slash_animation(self):
+    def create_slash_animation(self, charged=False):
         self.slash_animation = []
         for i in range(10):
-            slash = pygame.Surface((120, 60), pygame.SRCALPHA)
-            arc_rect = pygame.Rect(0, 0, 120, 60)
+            width = 240 if charged else 120  # Increased width for charged slash
+            height = 120 if charged else 60  # Increased height for charged slash
+            slash = pygame.Surface((width, height), pygame.SRCALPHA)
+            arc_rect = pygame.Rect(0, 0, width, height)
+            color = RED if charged else WHITE  # Different color for charged slash
             if self.slashing_upward:
                 start_angle = math.pi * 3/2
                 end_angle = math.pi * 5/2
             else:
                 start_angle = 0 if self.facing_right else math.pi
                 end_angle = math.pi if self.facing_right else math.pi * 2
-            pygame.draw.arc(slash, WHITE, arc_rect, start_angle, end_angle, 10 - i)
+            pygame.draw.arc(slash, color, arc_rect, start_angle, end_angle, 10 - i)
             self.slash_animation.append(slash)
 
     def update(self):
@@ -88,18 +106,39 @@ class Player(pygame.sprite.Sprite):
         if keys[pygame.K_RIGHT]:
             self.rect.x += 5
             self.facing_right = True
+        if keys[pygame.K_c] and self.fuel > 0:
+            self.jetpack_active = True
+            self.velocity_y = -5
+            self.fuel -= 1
+            self.fuel_recharge_delay = 60  # Delay recharge for 1 second
+            if self.fuel == 0:
+                self.fuel_recharge_rate = 0.5  # Slower recharge rate if fuel is depleted
+        else:
+            self.jetpack_active = False
+            self.velocity_y += 0.8
+
+        if not self.jetpack_active and self.fuel_recharge_delay == 0:
+            self.fuel = min(self.fuel + self.fuel_recharge_rate, 100)
+            if self.fuel == 100:
+                self.fuel_recharge_rate = 1  # Reset to faster recharge rate when fully recharged
+        elif self.fuel_recharge_delay > 0:
+            self.fuel_recharge_delay -= 1
+
         if keys[pygame.K_SPACE] and not self.jumping:
             self.velocity_y = -15
             self.jumping = True
+
         if keys[pygame.K_z] and self.attack_cooldown == 0:
+            self.charge_time = min(self.charge_time + 1, self.max_charge_time)
+        elif self.charge_time > 0:
             self.attacking = True
             self.attack_cooldown = 30
             self.slashing_upward = keys[pygame.K_UP]
-            self.create_slash_animation()
+            self.create_slash_animation(charged=self.charge_time == self.max_charge_time)
             self.slash_frame = 0
             self.blade_pos = -10
+            self.charge_time = 0
 
-        self.velocity_y += 0.8
         self.rect.y += self.velocity_y
 
         if self.rect.bottom > HEIGHT:
@@ -116,11 +155,17 @@ class Player(pygame.sprite.Sprite):
                 self.attacking = False
                 self.slash_frame = 0
             if self.slashing_upward:
-                self.slash_rect = pygame.Rect(self.rect.centerx - 30, self.rect.top - 60, 60, 60)
+                width = 240 if self.charge_time == self.max_charge_time else 120
+                height = 120 if self.charge_time == self.max_charge_time else 60
+                self.slash_rect = pygame.Rect(self.rect.centerx - 30, self.rect.top - height, width, height)
             elif self.facing_right:
-                self.slash_rect = pygame.Rect(self.rect.right, self.rect.top - 10, 120, 60)
+                width = 240 if self.charge_time == self.max_charge_time else 120
+                height = 120 if self.charge_time == self.max_charge_time else 60
+                self.slash_rect = pygame.Rect(self.rect.right, self.rect.top - 10, width, height)
             else:
-                self.slash_rect = pygame.Rect(self.rect.left - 120, self.rect.top - 10, 120, 60)
+                width = 240 if self.charge_time == self.max_charge_time else 120
+                height = 120 if self.charge_time == self.max_charge_time else 60
+                self.slash_rect = pygame.Rect(self.rect.left - width, self.rect.top - 10, width, height)
         else:
             self.slash_rect = pygame.Rect(0, 0, 0, 0)
             self.blade_pos = max(0, self.blade_pos - 2)
@@ -134,6 +179,10 @@ class Player(pygame.sprite.Sprite):
 
     def draw(self, surface):
         if self.invincibility == 0 or self.flicker:
+            if self.flicker:
+                self.image.set_alpha(128)  # Make the player semi-transparent
+            else:
+                self.image.set_alpha(255)  # Make the player fully opaque
             surface.blit(self.image, self.rect)
         if self.attacking and self.slash_frame < len(self.slash_animation):
             if self.slashing_upward:
@@ -151,6 +200,12 @@ class Player(pygame.sprite.Sprite):
             elif not self.facing_right:
                 slash_surf = pygame.transform.flip(slash_surf, True, False)
             surface.blit(slash_surf, (slash_x, slash_y))
+        if self.jetpack_active:
+            flame = self.jetpack_animation[self.jetpack_frame // 5]
+            flame_x = self.rect.centerx - 5
+            flame_y = self.rect.bottom
+            surface.blit(flame, (flame_x, flame_y))
+            self.jetpack_frame = (self.jetpack_frame + 1) % (len(self.jetpack_animation) * 5)
 
     def get_hit(self):
         if self.invincibility == 0:
@@ -173,7 +228,7 @@ class Enemy(pygame.sprite.Sprite):
         self.image.fill((0, 0, 0, 0))
         
         if self.enemy_type == "crawler":
-            # Crawler enemy (similar to previous insect-like enemy)
+            # Crawler enemy
             pygame.draw.ellipse(self.image, LIGHT_GRAY, (10, 10, 30, 40))
             leg_offset = abs(math.sin(self.animation_count * 0.2)) * 5
             pygame.draw.line(self.image, LIGHT_GRAY, (15, 30), (5, 40 + leg_offset), 2)
@@ -193,21 +248,27 @@ class Enemy(pygame.sprite.Sprite):
             pygame.draw.circle(self.image, WHITE, (35 if self.direction > 0 else 15, 25), 5)
         
         elif self.enemy_type == "shooter":
-            # Shooting enemy
-            pygame.draw.rect(self.image, GREEN, (10, 10, 30, 30))
-            pygame.draw.rect(self.image, BLACK, (15, 15, 20, 20))
-            pygame.draw.line(self.image, GREEN, (25, 40), (25, 50), 3)
+            # New green enemy sprite
+            pygame.draw.rect(self.image, DARK_GREEN, (10, 10, 30, 30))  # Body
+            pygame.draw.rect(self.image, BLACK, (15, 15, 20, 20))  # Inner part
+            pygame.draw.polygon(self.image, DARK_GREEN, [(25, 40), (20, 50), (30, 50)])  # Feet
+            pygame.draw.line(self.image, WHITE, (25, 40), (25, 30), 3)  # Gun barrel
+            pygame.draw.circle(self.image, WHITE, (25, 25), 5)  # Eye
+            # Adding gothic elements
+            pygame.draw.polygon(self.image, DARK_GRAY, [(10, 10), (25, 0), (40, 10)])  # Gothic top
+            pygame.draw.line(self.image, WHITE, (10, 10), (40, 10), 2)  # Gothic outline
 
     def update(self):
-        if self.enemy_type == "crawler":
-            self.rect.x += self.speed * self.direction
-            if self.rect.left < 0 or self.rect.right > WIDTH:
-                self.direction *= -1
-        elif self.enemy_type == "flyer":
-            self.rect.x += self.speed * self.direction
-            self.rect.y += math.sin(self.animation_count * 0.1) * 2
-            if self.rect.left < 0 or self.rect.right > WIDTH:
-                self.direction *= -1
+        if self.enemy_type in ["crawler", "flyer"]:
+            # Move towards the player
+            if self.rect.x < player.rect.x:
+                self.rect.x += self.speed
+            elif self.rect.x > player.rect.x:
+                self.rect.x -= self.speed
+            if self.rect.y < player.rect.y:
+                self.rect.y += self.speed
+            elif self.rect.y > player.rect.y:
+                self.rect.y -= self.speed
         elif self.enemy_type == "shooter":
             if random.random() < 0.01:  # 1% chance to shoot each frame
                 self.shoot()
@@ -224,7 +285,7 @@ class Bullet(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
         self.image = pygame.Surface((10, 10))
-        self.image.fill(GREEN)
+        self.image.fill(DARK_GREEN)
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
         self.speed = 5
@@ -275,11 +336,21 @@ def spawn_enemy():
 for _ in range(5):
     spawn_enemy()
 
+def game_over_screen():
+    screen.fill(BLACK)
+    font = pygame.font.Font(None, 74)
+    text = font.render("Game Over", True, WHITE)
+    text_rect = text.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+    screen.blit(text, text_rect)
+    pygame.display.flip()
+    pygame.time.wait(3000)  # Wait for 3 seconds
+
 # Game loop
 clock = pygame.time.Clock()
 font = pygame.font.Font(None, 36)
 running = True
 enemy_spawn_timer = 0
+enemy_spawn_rate = 180  # Initial spawn rate (frames)
 
 while running:
     for event in pygame.event.get():
@@ -299,12 +370,14 @@ while running:
     if enemy_hits and player.invincibility == 0:
         player.get_hit()
         if player.health <= 0:
+            game_over_screen()
             running = False
 
     bullet_hits = pygame.sprite.spritecollide(player, bullets, True)
     if bullet_hits and player.invincibility == 0:
         player.get_hit()
         if player.health <= 0:
+            game_over_screen()
             running = False
 
     if player.attacking:
@@ -315,9 +388,10 @@ while running:
                 player.hit_pause = 5
 
     enemy_spawn_timer += 1
-    if enemy_spawn_timer >= 180:
+    if enemy_spawn_timer >= enemy_spawn_rate:
         spawn_enemy()
         enemy_spawn_timer = 0
+        enemy_spawn_rate = max(30, enemy_spawn_rate - 5)  # Increase spawn rate over time
 
     screen.fill(BLACK)
     
